@@ -1,4 +1,4 @@
-// index.js - Main WhatsApp Bot with Auto-Pull
+// index.js - Auto-restore session on startup
 require('dotenv').config();
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const P = require('pino');
@@ -6,7 +6,6 @@ const fs = require('fs');
 const path = require('path');
 const { encodeSession, decodeSession, hasSession, SESSION_PREFIX } = require('./lib/session');
 const decryptors = require('./decryptors');
-const Updater = require('./lib/updater');
 
 // ============= CONFIG =============
 const SESSION_DIR = path.join(__dirname, 'baileys_auth');
@@ -21,12 +20,39 @@ const SUPPORTED_EXTS = {
     '.ssc': 'SSH Custom'
 };
 
-// ============= UPDATER =============
-const updater = new Updater();
+// ============= AUTO-RESTORE SESSION =============
+function autoRestoreSession() {
+    const sessionId = process.env.SESSION_ID;
+    
+    if (!sessionId) {
+        console.log('⚠️ No SESSION_ID found in .env');
+        console.log('📝 Please run: npm run session');
+        console.log('Then add SESSION_ID to .env');
+        return false;
+    }
+
+    // Check if session already exists
+    if (hasSession()) {
+        console.log('✅ Session already exists in baileys_auth/');
+        return true;
+    }
+
+    console.log('📦 No session found. Attempting to restore from SESSION_ID...');
+    
+    try {
+        // Decode and restore session
+        decodeSession(sessionId);
+        console.log('✅ Session restored successfully!');
+        return true;
+    } catch (error) {
+        console.error('❌ Failed to restore session:', error.message);
+        console.log('📝 Please generate a new session: npm run session');
+        return false;
+    }
+}
 
 // ============= CONFIG GENERATOR =============
 function generateImportableConfig(decryptedText, ext) {
-    // Try to extract JSON
     let jsonData = null;
     try {
         const match = decryptedText.match(/\{[\s\S]*\}/);
@@ -146,13 +172,14 @@ function generateImportableConfig(decryptedText, ext) {
 
 // ============= WHATSAPP BOT =============
 async function startBot() {
-    console.log('🤖 Starting WhatsApp VPN Decryptor Bot (Pure Node.js)');
+    console.log('🤖 Starting WhatsApp VPN Decryptor Bot');
     console.log('=' .repeat(50));
 
-    // Check for session
-    if (!hasSession()) {
-        console.log('❌ No session found!');
+    // ===== AUTO-RESTORE SESSION =====
+    if (!autoRestoreSession()) {
+        console.log('\n❌ Cannot start bot without a valid session.');
         console.log('Please run: npm run session');
+        console.log('Then add SESSION_ID to .env');
         process.exit(1);
     }
 
@@ -209,7 +236,6 @@ async function startBot() {
         if (msg.key.fromMe) return;
         
         const from = msg.key.remoteJid;
-        const isGroup = from.endsWith('@g.us');
 
         try {
             const textMsg = msg.message.conversation || 
@@ -345,32 +371,39 @@ async function main() {
     const command = args[0];
 
     if (command === 'generate' || command === 'gen') {
-        await require('./lib/session').encodeSession();
-        console.log('✅ Session generated!');
+        try {
+            const sessionId = encodeSession();
+            console.log('\n✅ Session generated!');
+            console.log('=' .repeat(50));
+            console.log(sessionId);
+            console.log('=' .repeat(50));
+            console.log('\n📌 Add this to your .env file:');
+            console.log(`SESSION_ID=${sessionId}`);
+            
+            fs.writeFileSync('session_id.txt', sessionId);
+            console.log('\n💾 Saved to session_id.txt');
+        } catch (error) {
+            console.error('❌ Failed to generate session:', error.message);
+        }
         return;
     }
 
     if (command === 'restore' && args[1]) {
-        require('./lib/session').decodeSession(args[1]);
-        console.log('✅ Session restored!');
+        try {
+            decodeSession(args[1]);
+            console.log('✅ Session restored!');
+        } catch (error) {
+            console.error('❌ Failed to restore session:', error.message);
+        }
         return;
     }
 
-    // ===== CHECK FOR UPDATES =====
-    console.log('📡 Checking for updates...');
-    
-    // Save current package.json for comparison
-    await updater.savePackageForComparison();
-    
-    // Check and pull updates
-    const updated = await updater.checkAndPull();
-    
-    if (updated) {
-        console.log('🔄 Updates applied! Restarting...');
-        process.exit(0); // Will be restarted by PM2 or systemd
+    if (command === 'restore') {
+        console.log('Usage: node index.js restore <SESSION_ID>');
+        return;
     }
 
-    // Start bot
+    // Start bot - auto-restores session
     await startBot();
 }
 
