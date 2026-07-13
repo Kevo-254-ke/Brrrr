@@ -1,0 +1,23 @@
+{
+  "name": "whatsapp-vpn-decryptor",
+  "version": "2.0.0",
+  "description": "WhatsApp bot for VPN config decryption - Pure Node.js",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "session": "node index.js generate",
+    "restore": "node index.js restore",
+    "dev": "nodemon index.js",
+    "postinstall": "node scripts/postinstall.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.9",
+    "dotenv": "^16.4.5",
+    "pino": "^9.2.0",
+    "crypto-js": "^4.2.0",
+    "simple-git": "^3.25.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  }
+}
